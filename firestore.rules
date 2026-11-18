@@ -40,7 +40,7 @@ service cloud.firestore {
     //   - costPrice: number (required, >= 0)
     //   - sellingPrice: number (required, >= 0)
     //   - lowStockThreshold: int (required, >= 0)
-    //   - imageUrl: string | null (optional, <= 500 chars)
+    //   - imageUrl: string | null (optional, <= 400000 chars)
     //   - updatedAt: int (required, > 0, epoch ms)
     //   - isDeleted: bool (required)
     //   - deletedAt: int | null (optional, >= 0)
@@ -223,7 +223,7 @@ service cloud.firestore {
         data.costPrice is number && data.costPrice >= 0 &&
         data.sellingPrice is number && data.sellingPrice >= 0 &&
         data.lowStockThreshold is int && data.lowStockThreshold >= 0 &&
-        isValidOptionalStringOrNull(data, 'imageUrl', 500);
+        isValidOptionalStringOrNull(data, 'imageUrl', 400000);
     }
 
     function isValidBranchStock(data, stockId) {

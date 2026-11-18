@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/syncable_models.dart';
 import '../../../shared/widgets/app_state_widgets.dart';
+import '../../../shared/widgets/product_image.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../branches/presentation/branch_controller.dart';
 import 'barcode_scanner_screen.dart';
@@ -195,105 +199,154 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final thresholdCtrl = TextEditingController(
       text: (existing?.lowStockThreshold ?? 5).toString(),
     );
-    final imageUrlCtrl = TextEditingController(text: existing?.imageUrl ?? '');
+    String? pickedImageData = existing?.imageUrl;
     final formKey = GlobalKey<FormState>();
+
+    Future<void> pickCompressedImage(
+      ImageSource source,
+      void Function(void Function()) setDialogState,
+    ) async {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 65,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      final encoded = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      setDialogState(() => pickedImageData = encoded);
+    }
 
     final saved = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? 'Add Product' : 'Edit Product'),
-        content: SingleChildScrollView(
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Product Name'),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Required' : null,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: skuCtrl,
-                  decoration: const InputDecoration(labelText: 'SKU'),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Required' : null,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: barcodeCtrl,
-                  decoration: const InputDecoration(labelText: 'Barcode / QR'),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: categoryCtrl,
-                  decoration: const InputDecoration(labelText: 'Category'),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: costCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(existing == null ? 'Add Product' : 'Edit Product'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      ProductImage(imageData: pickedImageData, size: 56),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Wrap(
+                          spacing: AppSpacing.xs,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => pickCompressedImage(
+                                ImageSource.gallery,
+                                setDialogState,
+                              ),
+                              icon: const Icon(Icons.photo_library_outlined, size: 16),
+                              label: const Text('Gallery'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => pickCompressedImage(
+                                ImageSource.camera,
+                                setDialogState,
+                              ),
+                              icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                              label: const Text('Camera'),
+                            ),
+                            if (pickedImageData != null &&
+                                pickedImageData!.isNotEmpty)
+                              TextButton(
+                                onPressed: () => setDialogState(
+                                  () => pickedImageData = null,
+                                ),
+                                child: const Text('Remove'),
+                              ),
+                          ],
                         ),
-                        decoration: const InputDecoration(labelText: 'Cost'),
-                        validator: (v) => double.tryParse(v ?? '') == null
-                            ? 'Invalid'
-                            : null,
                       ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: TextFormField(
-                        controller: priceCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(labelText: 'Price'),
-                        validator: (v) => double.tryParse(v ?? '') == null
-                            ? 'Invalid'
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: thresholdCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration:
-                      const InputDecoration(labelText: 'Low Stock Alert'),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: imageUrlCtrl,
-                  keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(
-                    labelText: 'Image URL (optional)',
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: AppSpacing.md),
+                  TextFormField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Product Name'),
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Required' : null,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextFormField(
+                    controller: skuCtrl,
+                    decoration: const InputDecoration(labelText: 'SKU'),
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Required' : null,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextFormField(
+                    controller: barcodeCtrl,
+                    decoration: const InputDecoration(labelText: 'Barcode / QR'),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextFormField(
+                    controller: categoryCtrl,
+                    decoration: const InputDecoration(labelText: 'Category'),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: costCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(labelText: 'Cost'),
+                          validator: (v) => double.tryParse(v ?? '') == null
+                              ? 'Invalid'
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: TextFormField(
+                          controller: priceCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(labelText: 'Price'),
+                          validator: (v) => double.tryParse(v ?? '') == null
+                              ? 'Invalid'
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextFormField(
+                    controller: thresholdCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        const InputDecoration(labelText: 'Low Stock Alert'),
+                  ),
+                ],
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(ctx).pop(true);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.of(ctx).pop(true);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
 
@@ -307,7 +360,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
             costPrice: double.parse(costCtrl.text),
             sellingPrice: double.parse(priceCtrl.text),
             lowStockThreshold: int.tryParse(thresholdCtrl.text) ?? 5,
-            imageUrl: imageUrlCtrl.text,
+            imageUrl: pickedImageData,
           );
     }
   }
@@ -394,25 +447,7 @@ class _ProductCard extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: product.imageUrl != null && product.imageUrl!.isNotEmpty
-                    ? Image.network(
-                        product.imageUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const Icon(
-                          Icons.inventory_2_outlined,
-                          size: 20,
-                        ),
-                      )
-                    : const Icon(Icons.inventory_2_outlined, size: 20),
-              ),
+              ProductImage(imageData: product.imageUrl, size: 44),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
@@ -570,6 +605,8 @@ class _ProductDetailSheetState extends ConsumerState<_ProductDetailSheet> {
           children: [
             Row(
               children: [
+                ProductImage(imageData: widget.product.imageUrl, size: 52),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Text(
                     widget.product.name,

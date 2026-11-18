@@ -51,6 +51,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera access is required to scan product barcodes and QR codes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photo library access is required to attach product images.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID is used to unlock NEXUS securely.</string>
 	<key>NSAppTransportSecurity</key>
