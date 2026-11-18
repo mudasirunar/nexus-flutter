@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nexus/data/local/app_database.dart';
 import 'package:nexus/data/local/daos/nexus_dao.dart';
@@ -8,6 +10,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class FakeRemoteSyncDataSource implements RemoteSyncDataSource {
   final Map<String, Map<String, Map<String, dynamic>>> store = {};
+  final Map<String, StreamController<List<Map<String, dynamic>>>> _controllers =
+      {};
   int upsertCallCount = 0;
   int? failAfterUpserts;
 
@@ -23,6 +27,7 @@ class FakeRemoteSyncDataSource implements RemoteSyncDataSource {
     }
     store.putIfAbsent(collection, () => {});
     store[collection]![docId] = Map<String, dynamic>.from(data);
+    _controllers[collection]?.add(store[collection]!.values.toList());
   }
 
   @override
@@ -39,6 +44,23 @@ class FakeRemoteSyncDataSource implements RemoteSyncDataSource {
         (a, b) =>
             (a['updatedAt'] as int).compareTo(b['updatedAt'] as int),
       );
+  }
+
+  @override
+  Stream<List<Map<String, dynamic>>> watchUpdatedSince({
+    required String collection,
+    required int sinceEpochMs,
+  }) {
+    final ctrl = _controllers.putIfAbsent(
+      collection,
+      () => StreamController<List<Map<String, dynamic>>>.broadcast(),
+    );
+    return ctrl.stream.map(
+      (docs) => docs
+          .where((d) => ((d['updatedAt'] as num?)?.toInt() ?? 0) > sinceEpochMs)
+          .map((d) => Map<String, dynamic>.from(d))
+          .toList(),
+    );
   }
 }
 
@@ -315,5 +337,34 @@ void main() {
     final allLocal = await dao.getTransactions();
     expect(allLocal.length, 5);
     expect(allLocal.every((t) => t.syncStatus == 'synced'), isTrue);
+  });
+
+  test('6. Realtime snapshot stream applies remote updates to local SQLite', () async {
+    final sub = remote
+        .watchUpdatedSince(collection: 'products', sinceEpochMs: 0)
+        .listen((docs) => engine.applyRemoteBatch('products', docs));
+
+    await remote.upsertDocument(
+      collection: 'products',
+      docId: 'prod-rt-1',
+      data: {
+        'id': 'prod-rt-1',
+        'name': 'Live Synced Item',
+        'sku': 'RT-1',
+        'barcode': '',
+        'category': 'General',
+        'costPrice': 10.0,
+        'sellingPrice': 20.0,
+        'lowStockThreshold': 5,
+        'updatedAt': 4000,
+        'isDeleted': false,
+      },
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await sub.cancel();
+
+    final products = await dao.getProducts();
+    expect(products.any((p) => p.id == 'prod-rt-1' && p.name == 'Live Synced Item'), isTrue);
   });
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/app_database.dart';
@@ -44,29 +45,81 @@ bool _hasConnection(List<ConnectivityResult> results) {
   return results.any((r) => r != ConnectivityResult.none);
 }
 
-/// Manages sync state and automatically triggers [SyncEngine.syncAll]
-/// whenever connectivity returns.
+/// Manages bi-directional sync state, live Firestore `.snapshots()` listeners,
+/// and automatic sync on connectivity restoration.
 class SyncController extends Notifier<SyncState> {
-  StreamSubscription<List<ConnectivityResult>>? _sub;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  final List<StreamSubscription<List<Map<String, dynamic>>>> _snapshotSubs = [];
   bool _wasOffline = false;
+  bool _listenersActive = false;
 
   @override
   SyncState build() {
     _listenToConnectivity();
-    ref.onDispose(() => _sub?.cancel());
+    ref.onDispose(() {
+      _connectivitySub?.cancel();
+      stopRealtimeListeners();
+    });
     Future.microtask(refreshQueueCounts);
     return const SyncState();
   }
 
   void _listenToConnectivity() {
     final connectivity = Connectivity();
-    _sub = connectivity.onConnectivityChanged.listen((results) {
+    _connectivitySub = connectivity.onConnectivityChanged.listen((results) {
       final online = _hasConnection(results);
       if (online && _wasOffline) {
         syncNow();
+        if (_listenersActive) {
+          startRealtimeListeners();
+        }
       }
       _wasOffline = !online;
     });
+  }
+
+  /// Attaches live Firestore `.snapshots()` listeners across all synced tables
+  /// so remote changes from other devices appear in SQLite & UI immediately.
+  Future<void> startRealtimeListeners() async {
+    await stopRealtimeListeners();
+    _listenersActive = true;
+
+    final dao = await ref.read(nexusDaoProvider.future);
+    final engine = await ref.read(syncEngineProvider.future);
+    final remote = ref.read(remoteSyncDataSourceProvider);
+
+    for (final table in SyncEngine.syncedTables) {
+      final since = await dao.getLastPullTimestamp(table);
+      final sub = remote
+          .watchUpdatedSince(collection: table, sinceEpochMs: since)
+          .listen(
+        (docs) async {
+          if (docs.isEmpty) return;
+          final applied = await engine.applyRemoteBatch(table, docs);
+          if (applied > 0) {
+            final counts = await dao.getSyncQueueCounts();
+            state = state.copyWith(
+              dataVersion: state.dataVersion + 1,
+              pendingCount: counts.pending,
+              failedCount: counts.failed,
+              lastSyncedAt: DateTime.now(),
+            );
+          }
+        },
+        onError: (Object e) {
+          debugPrint('Realtime listener ($table) error: $e');
+        },
+      );
+      _snapshotSubs.add(sub);
+    }
+  }
+
+  Future<void> stopRealtimeListeners() async {
+    _listenersActive = false;
+    for (final sub in _snapshotSubs) {
+      await sub.cancel();
+    }
+    _snapshotSubs.clear();
   }
 
   Future<void> refreshQueueCounts() async {
@@ -92,6 +145,8 @@ class SyncController extends Notifier<SyncState> {
         isSyncing: false,
         pendingCount: counts.pending,
         failedCount: counts.failed,
+        dataVersion:
+            result.pulledCount > 0 ? state.dataVersion + 1 : state.dataVersion,
         lastSyncedAt: DateTime.now(),
         lastError: result.error,
       );

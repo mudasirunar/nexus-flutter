@@ -4,6 +4,7 @@ class SyncState {
     this.isSyncing = false,
     this.pendingCount = 0,
     this.failedCount = 0,
+    this.dataVersion = 0,
     this.lastSyncedAt,
     this.lastError,
   });
@@ -11,6 +12,10 @@ class SyncState {
   final bool isSyncing;
   final int pendingCount;
   final int failedCount;
+
+  /// Increments whenever remote snapshot/pull updates local SQLite data so
+  /// feature controllers refresh UI immediately.
+  final int dataVersion;
   final DateTime? lastSyncedAt;
   final String? lastError;
 
@@ -18,6 +23,7 @@ class SyncState {
     bool? isSyncing,
     int? pendingCount,
     int? failedCount,
+    int? dataVersion,
     DateTime? lastSyncedAt,
     String? lastError,
     bool clearError = false,
@@ -26,6 +32,7 @@ class SyncState {
       isSyncing: isSyncing ?? this.isSyncing,
       pendingCount: pendingCount ?? this.pendingCount,
       failedCount: failedCount ?? this.failedCount,
+      dataVersion: dataVersion ?? this.dataVersion,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       lastError: clearError ? null : (lastError ?? this.lastError),
     );

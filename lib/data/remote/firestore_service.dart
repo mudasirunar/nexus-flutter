@@ -12,6 +12,11 @@ abstract class RemoteSyncDataSource {
     required String collection,
     required int sinceEpochMs,
   });
+
+  Stream<List<Map<String, dynamic>>> watchUpdatedSince({
+    required String collection,
+    required int sinceEpochMs,
+  });
 }
 
 /// Cloud Firestore implementation of [RemoteSyncDataSource].
@@ -44,7 +49,26 @@ class FirestoreService implements RemoteSyncDataSource {
         .orderBy('updatedAt')
         .get();
 
-    return snapshot.docs.map((doc) {
+    return _docsToMaps(snapshot.docs);
+  }
+
+  @override
+  Stream<List<Map<String, dynamic>>> watchUpdatedSince({
+    required String collection,
+    required int sinceEpochMs,
+  }) {
+    return _firestore
+        .collection(collection)
+        .where('updatedAt', isGreaterThan: sinceEpochMs)
+        .orderBy('updatedAt')
+        .snapshots()
+        .map((snapshot) => _docsToMaps(snapshot.docs));
+  }
+
+  List<Map<String, dynamic>> _docsToMaps(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    return docs.map((doc) {
       final data = Map<String, dynamic>.from(doc.data());
       data['id'] ??= doc.id;
       return data;

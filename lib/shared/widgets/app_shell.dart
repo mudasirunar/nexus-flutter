@@ -33,11 +33,17 @@ class _AppShellState extends ConsumerState<AppShell> {
     NotificationService.instance.initialize(
       onNotificationTap: _handleNotificationRoute,
     );
-    Future.microtask(_initialSyncAndRefresh);
+    Future.microtask(_initialSyncAndStartRealtime);
   }
 
-  Future<void> _initialSyncAndRefresh() async {
+  Future<void> _initialSyncAndStartRealtime() async {
     await ref.read(syncControllerProvider.notifier).syncNow();
+    if (!mounted) return;
+    await _reloadFeatureControllers();
+    await ref.read(syncControllerProvider.notifier).startRealtimeListeners();
+  }
+
+  Future<void> _reloadFeatureControllers() async {
     if (!mounted) return;
     await ref.read(branchControllerProvider.notifier).load();
     await ref.read(inventoryControllerProvider.notifier).load();
@@ -63,6 +69,12 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Automatically reload UI whenever real-time Firestore snapshots update SQLite.
+    ref.listen<int>(
+      syncControllerProvider.select((s) => s.dataVersion),
+      (_, _) => _reloadFeatureControllers(),
+    );
+
     final isOnline = ref.watch(isOnlineProvider).value ?? true;
     final syncState = ref.watch(syncControllerProvider);
     final branchState = ref.watch(branchControllerProvider);

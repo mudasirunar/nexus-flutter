@@ -116,9 +116,19 @@ class SyncEngine {
       collection: table,
       sinceEpochMs: lastPull,
     );
+    return applyRemoteBatch(table, remoteDocs);
+  }
 
+  /// Applies a batch of remote documents (from one-shot pull or live
+  /// Firestore `.snapshots()` stream) into SQLite using Delete Always Wins
+  /// and Last-Write-Wins (LWW). Returns the number of local rows updated.
+  Future<int> applyRemoteBatch(
+    String table,
+    List<Map<String, dynamic>> remoteDocs,
+  ) async {
     if (remoteDocs.isEmpty) return 0;
 
+    final lastPull = await dao.getLastPullTimestamp(table);
     int applied = 0;
     int maxUpdatedAt = lastPull;
 
@@ -155,27 +165,27 @@ class SyncEngine {
 
     final localDeleted = (localRow['is_deleted'] as int? ?? 0) == 1;
     final remoteDeleted = (remoteDoc['isDeleted'] as bool?) ?? false;
-
-    // Rule 1: Delete Always Wins no matter what.
-    if (remoteDeleted && !localDeleted) {
-      // Remote delete overrides any local pending edit.
-      return _ConflictWinner.remote;
-    }
-    if (localDeleted && !remoteDeleted) {
-      // Local delete overrides any remote edit; keep local pending to push delete.
-      return _ConflictWinner.local;
-    }
-    if (localDeleted && remoteDeleted) {
-      return _ConflictWinner.remote;
-    }
-
-    // Rule 2: Last-Write-Wins (LWW) for non-deleted records.
     final localStatus = (localRow['sync_status'] as String?) ?? 'synced';
     final localUpdatedAt = (localRow['updated_at'] as num?)?.toInt() ?? 0;
     final remoteUpdatedAt = (remoteDoc['updatedAt'] as num?)?.toInt() ?? 0;
 
+    // Rule 1: Delete Always Wins no matter what.
+    if (remoteDeleted && !localDeleted) {
+      return _ConflictWinner.remote;
+    }
+    if (localDeleted && !remoteDeleted) {
+      return _ConflictWinner.local;
+    }
+    if (localDeleted && remoteDeleted) {
+      return localStatus == 'synced' && localUpdatedAt == remoteUpdatedAt
+          ? _ConflictWinner.local
+          : _ConflictWinner.remote;
+    }
+
+    // Rule 2: Last-Write-Wins (LWW) for non-deleted records.
     if (localStatus == 'synced') {
-      return remoteUpdatedAt >= localUpdatedAt
+      // Skip identical synced timestamp to avoid redundant snapshot writes.
+      return remoteUpdatedAt > localUpdatedAt
           ? _ConflictWinner.remote
           : _ConflictWinner.local;
     }
