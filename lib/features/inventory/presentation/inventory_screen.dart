@@ -195,6 +195,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final thresholdCtrl = TextEditingController(
       text: (existing?.lowStockThreshold ?? 5).toString(),
     );
+    final imageUrlCtrl = TextEditingController(text: existing?.imageUrl ?? '');
     final formKey = GlobalKey<FormState>();
 
     final saved = await showDialog<bool>(
@@ -267,6 +268,14 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   decoration:
                       const InputDecoration(labelText: 'Low Stock Alert'),
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                TextFormField(
+                  controller: imageUrlCtrl,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: 'Image URL (optional)',
+                  ),
+                ),
               ],
             ),
           ),
@@ -298,6 +307,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
             costPrice: double.parse(costCtrl.text),
             sellingPrice: double.parse(priceCtrl.text),
             lowStockThreshold: int.tryParse(thresholdCtrl.text) ?? 5,
+            imageUrl: imageUrlCtrl.text,
           );
     }
   }
@@ -384,6 +394,26 @@ class _ProductCard extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Row(
             children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: product.imageUrl != null && product.imageUrl!.isNotEmpty
+                    ? Image.network(
+                        product.imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const Icon(
+                          Icons.inventory_2_outlined,
+                          size: 20,
+                        ),
+                      )
+                    : const Icon(Icons.inventory_2_outlined, size: 20),
+              ),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

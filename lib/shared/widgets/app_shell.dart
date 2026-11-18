@@ -5,12 +5,15 @@ import '../../core/network/connectivity_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/theme_controller.dart';
+import '../../features/analytics/presentation/analytics_controller.dart';
 import '../../features/analytics/presentation/analytics_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/branches/presentation/branch_controller.dart';
 import '../../features/branches/presentation/branches_screen.dart';
+import '../../features/inventory/presentation/inventory_controller.dart';
 import '../../features/inventory/presentation/inventory_screen.dart';
 import '../../features/transactions/presentation/sync_center_screen.dart';
+import '../../features/transactions/presentation/transactions_controller.dart';
 import '../../features/transactions/presentation/transactions_screen.dart';
 import 'app_state_widgets.dart';
 
@@ -30,6 +33,16 @@ class _AppShellState extends ConsumerState<AppShell> {
     NotificationService.instance.initialize(
       onNotificationTap: _handleNotificationRoute,
     );
+    Future.microtask(_initialSyncAndRefresh);
+  }
+
+  Future<void> _initialSyncAndRefresh() async {
+    await ref.read(syncControllerProvider.notifier).syncNow();
+    if (!mounted) return;
+    await ref.read(branchControllerProvider.notifier).load();
+    await ref.read(inventoryControllerProvider.notifier).load();
+    await ref.read(transactionsControllerProvider.notifier).load();
+    await ref.read(analyticsControllerProvider.notifier).load();
   }
 
   void _handleNotificationRoute(String? route) {
