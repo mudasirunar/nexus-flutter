@@ -6,6 +6,7 @@ import 'core/config/firebase_emulator_config.dart';
 import 'core/network/connectivity_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_controller.dart';
 import 'features/auth/presentation/auth_controller.dart';
 import 'features/auth/presentation/lock_screen.dart';
 import 'features/auth/presentation/login_screen.dart';
@@ -29,6 +30,7 @@ class NexusApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
+    final themeMode = ref.watch(themeControllerProvider);
 
     return Listener(
       behavior: HitTestBehavior.translucent,
@@ -39,7 +41,7 @@ class NexusApp extends ConsumerWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
-        themeMode: ThemeMode.system,
+        themeMode: themeMode,
         home: switch (authState.status) {
           AuthStatus.loading => const Scaffold(
             body: AppLoadingView(message: 'Restoring session...'),
