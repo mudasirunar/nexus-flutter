@@ -9,6 +9,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/models/syncable_models.dart';
 import '../../../shared/widgets/app_state_widgets.dart';
 import '../../../shared/widgets/product_image.dart';
+import '../../../shared/widgets/skeleton_widgets.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../branches/presentation/branch_controller.dart';
 import 'barcode_scanner_screen.dart';
@@ -48,7 +49,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final role = ref.watch(authControllerProvider).user?.role ?? UserRole.employee;
 
     if (inv.isLoading) {
-      return const AppLoadingView(message: 'Loading inventory...');
+      return const ListSkeleton();
     }
     if (inv.error != null) {
       return AppErrorView(
@@ -679,7 +680,7 @@ class _ProductDetailSheetState extends ConsumerState<_ProductDetailSheet> {
             ),
             const SizedBox(height: AppSpacing.sm),
             if (_loadingMovements)
-              const AppLoadingView(message: 'Loading movements...')
+              const ListSkeleton(itemCount: 3, compact: true)
             else if (_movements.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),

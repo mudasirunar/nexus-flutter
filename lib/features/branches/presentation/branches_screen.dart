@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/syncable_models.dart';
 import '../../../shared/widgets/app_state_widgets.dart';
+import '../../../shared/widgets/skeleton_widgets.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../inventory/presentation/inventory_controller.dart';
 import 'branch_controller.dart';
@@ -19,7 +20,7 @@ class BranchesScreen extends ConsumerWidget {
     final role = ref.watch(authControllerProvider).user?.role ?? UserRole.employee;
 
     if (state.isLoading) {
-      return const AppLoadingView(message: 'Loading branches...');
+      return const ListSkeleton();
     }
     if (state.error != null) {
       return AppErrorView(

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/syncable_models.dart';
 import '../../../shared/widgets/app_state_widgets.dart';
+import '../../../shared/widgets/skeleton_widgets.dart';
 import '../../branches/presentation/branch_controller.dart';
 import '../../inventory/presentation/barcode_scanner_screen.dart';
 import '../../inventory/presentation/inventory_controller.dart';
@@ -19,7 +20,7 @@ class TransactionsScreen extends ConsumerWidget {
     final branch = ref.watch(branchControllerProvider).activeBranch;
 
     if (txState.isLoading) {
-      return const AppLoadingView(message: 'Loading transactions...');
+      return const ListSkeleton();
     }
     if (txState.error != null) {
       return AppErrorView(

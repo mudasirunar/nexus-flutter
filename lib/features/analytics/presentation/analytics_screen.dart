@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/syncable_models.dart';
 import '../../../shared/widgets/app_state_widgets.dart';
+import '../../../shared/widgets/skeleton_widgets.dart';
 import '../../auth/presentation/auth_controller.dart';
 import 'analytics_controller.dart';
 
@@ -17,7 +18,7 @@ class AnalyticsScreen extends ConsumerWidget {
     final role = ref.watch(authControllerProvider).user?.role ?? UserRole.employee;
 
     if (data.isLoading) {
-      return const AppLoadingView(message: 'Computing analytics...');
+      return const DashboardSkeleton();
     }
     if (data.error != null) {
       return AppErrorView(
