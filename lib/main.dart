@@ -15,14 +15,30 @@ import 'shared/widgets/app_state_widgets.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Uses native google-services.json (Android) & GoogleService-Info.plist (iOS).
-  await Firebase.initializeApp();
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: false,
-  );
-  await NotificationService.instance.initialize();
+  String? initError;
+  try {
+    // Uses native google-services.json (Android) & GoogleService-Info.plist (iOS).
+    await Firebase.initializeApp();
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: false,
+    );
+    await NotificationService.instance.initialize();
+  } catch (e) {
+    initError = e.toString();
+  }
 
-  runApp(const ProviderScope(child: NexusApp()));
+  runApp(
+    ProviderScope(
+      child: initError != null
+          ? MaterialApp(
+              debugShowCheckedModeBanner: false,
+              home: Scaffold(
+                body: AppErrorView(message: 'Startup error: $initError'),
+              ),
+            )
+          : const NexusApp(),
+    ),
+  );
 }
 
 class NexusApp extends ConsumerWidget {

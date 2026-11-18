@@ -233,7 +233,11 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 children: [
                   Row(
                     children: [
-                      ProductImage(imageData: pickedImageData, size: 56),
+                      ProductImage(
+                        imageData: pickedImageData,
+                        size: 56,
+                        enableViewer: true,
+                      ),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(
                         child: Wrap(
@@ -448,7 +452,11 @@ class _ProductCard extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Row(
             children: [
-              ProductImage(imageData: product.imageUrl, size: 44),
+              ProductImage(
+                imageData: product.imageUrl,
+                size: 44,
+                enableViewer: true,
+              ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
@@ -606,7 +614,11 @@ class _ProductDetailSheetState extends ConsumerState<_ProductDetailSheet> {
           children: [
             Row(
               children: [
-                ProductImage(imageData: widget.product.imageUrl, size: 52),
+                ProductImage(
+                  imageData: widget.product.imageUrl,
+                  size: 52,
+                  enableViewer: true,
+                ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Text(
