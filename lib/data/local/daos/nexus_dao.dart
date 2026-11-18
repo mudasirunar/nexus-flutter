@@ -499,4 +499,90 @@ class NexusDao {
         k: (stockUnits: stockMap[k] ?? 0, salesTotal: salesMap[k] ?? 0.0),
     };
   }
+
+  /// Atomically records a sale or purchase transaction, updates branch stock,
+  /// and inserts stock movement audit rows in SQLite.
+  /// Returns a list of `(productId, newQty)` pairs for stock checks.
+  Future<List<({String productId, int newQty})>> recordTransactionAtomic({
+    required BusinessTransaction transaction,
+    required List<({String movementId, String productId, int quantity})> items,
+  }) async {
+    final updatedStocks = <({String productId, int newQty})>[];
+
+    await _db.transaction((txn) async {
+      await txn.insert(
+        'transactions',
+        transaction.toSqlite(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      for (final item in transaction.items) {
+        await txn.insert(
+          'transaction_items',
+          item.toSqlite(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      final isSale = transaction.type == 'sale';
+      for (final item in items) {
+        final stockRows = await txn.query(
+          'branch_stock',
+          columns: ['quantity'],
+          where: 'branch_id = ? AND product_id = ? AND is_deleted = 0',
+          whereArgs: [transaction.branchId, item.productId],
+          limit: 1,
+        );
+        final current = stockRows.isEmpty
+            ? 0
+            : (stockRows.first['quantity'] as num).toInt();
+
+        if (isSale && current < item.quantity) {
+          throw StateError(
+            'Insufficient stock for product ${item.productId} ($current available).',
+          );
+        }
+
+        final delta = isSale ? -item.quantity : item.quantity;
+        final nextQty = current + delta;
+
+        await txn.insert(
+          'branch_stock',
+          {
+            'id': '${transaction.branchId}_${item.productId}',
+            'branch_id': transaction.branchId,
+            'product_id': item.productId,
+            'quantity': nextQty,
+            'updated_at': transaction.updatedAt,
+            'is_deleted': 0,
+            'deleted_at': null,
+            'sync_status': 'pending',
+            'sync_error': null,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+
+        await txn.insert('stock_movements', {
+          'id': item.movementId,
+          'branch_id': transaction.branchId,
+          'product_id': item.productId,
+          'change_qty': delta,
+          'reason': transaction.type,
+          'reference_id': transaction.id,
+          'note': transaction.notes,
+          'created_by': transaction.createdBy,
+          'created_at': transaction.createdAt,
+          'updated_at': transaction.updatedAt,
+          'is_deleted': 0,
+          'deleted_at': null,
+          'sync_status': 'pending',
+          'sync_error': null,
+        });
+
+        updatedStocks.add((productId: item.productId, newQty: nextQty));
+      }
+    });
+
+    return updatedStocks;
+  }
 }

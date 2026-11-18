@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/connectivity_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/theme_controller.dart';
+import '../../features/analytics/presentation/analytics_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/branches/presentation/branch_controller.dart';
 import '../../features/branches/presentation/branches_screen.dart';
 import '../../features/inventory/presentation/inventory_screen.dart';
+import '../../features/transactions/presentation/sync_center_screen.dart';
+import '../../features/transactions/presentation/transactions_screen.dart';
 import 'app_state_widgets.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -19,6 +23,30 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    NotificationService.instance.initialize(
+      onNotificationTap: _handleNotificationRoute,
+    );
+  }
+
+  void _handleNotificationRoute(String? route) {
+    if (!mounted || route == null) return;
+    switch (route) {
+      case 'inventory':
+        setState(() => _selectedIndex = 1);
+      case 'sales':
+        setState(() => _selectedIndex = 2);
+      case 'branches':
+        setState(() => _selectedIndex = 3);
+      case 'sync':
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const SyncCenterScreen()),
+        );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,17 +85,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     ];
 
     final pages = [
-      const AppEmptyView(
-        icon: Icons.analytics_outlined,
-        title: 'Analytics Dashboard',
-        subtitle: 'Implemented in Phase 6 using real synced data.',
-      ),
+      const AnalyticsScreen(),
       const InventoryScreen(),
-      const AppEmptyView(
-        icon: Icons.receipt_long_outlined,
-        title: 'Sales & Purchases',
-        subtitle: 'Implemented in Phase 5 with offline POS queue.',
-      ),
+      const TransactionsScreen(),
       const BranchesScreen(),
       const _SettingsTab(),
     ];
@@ -238,16 +258,15 @@ class _SettingsTab extends ConsumerWidget {
               ),
               const Divider(),
               ListTile(
-                title: const Text('Sync Queue'),
+                title: const Text('Sync Center'),
                 subtitle: Text(
                   'Pending: ${syncState.pendingCount} • Failed: ${syncState.failedCount}',
                 ),
-                trailing: OutlinedButton(
-                  onPressed: syncState.isSyncing
-                      ? null
-                      : () =>
-                          ref.read(syncControllerProvider.notifier).syncNow(),
-                  child: const Text('Sync Now'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SyncCenterScreen(),
+                  ),
                 ),
               ),
             ],

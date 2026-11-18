@@ -1,8 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'core/config/firebase_emulator_config.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
@@ -15,10 +15,11 @@ import 'shared/widgets/app_state_widgets.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: kUseFirebaseEmulator ? kLocalEmulatorFirebaseOptions : null,
+  // Uses native google-services.json (Android) & GoogleService-Info.plist (iOS).
+  await Firebase.initializeApp();
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: false,
   );
-  await configureFirebaseEmulatorsIfNeeded();
   await NotificationService.instance.initialize();
 
   runApp(const ProviderScope(child: NexusApp()));

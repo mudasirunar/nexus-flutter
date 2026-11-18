@@ -5,6 +5,12 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// Android notification channel ID for NEXUS operational alerts.
 const String kNexusNotificationChannelId = 'nexus_alerts';
 
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Background FCM messages are handled by the system tray on Android.
+  debugPrint('FCM background message received: ${message.messageId}');
+}
+
 /// Handles local notifications and FCM (Firebase Cloud Messaging) wiring.
 ///
 /// During development (Phases 1–6) with local Firebase emulators, local
@@ -65,6 +71,7 @@ class NotificationService {
 
   Future<void> _initializeFcmSafe() async {
     try {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
       final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission(
         alert: true,
@@ -93,6 +100,14 @@ class NotificationService {
       // Expected on local emulators or iOS simulator without APNs/google-services.
       debugPrint('FCM initialization skipped/unavailable: $e');
     }
+  }
+
+  /// Registers the device for FCM push notifications when connected to a live
+  /// Firebase project.
+  Future<void> registerFcmSafe() async {
+    try {
+      await FirebaseMessaging.instance.register();
+    } catch (_) {}
   }
 
   /// Displays an immediate local notification (works offline & on emulators).

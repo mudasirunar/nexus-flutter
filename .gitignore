@@ -90,7 +90,12 @@ app.*.map.json
 **/ios/ServiceDefinitions.json
 **/ios/Runner/GeneratedPluginRegistrant.*
 
-# Environment & local secrets
+# Environment, Firebase configs & local secrets
 .env
 .env.*
 *.local
+**/google-services.json
+**/GoogleService-Info.plist
+lib/firebase_options.dart
+scripts/node_modules/
+scripts/*serviceAccount*.json

@@ -8,6 +8,7 @@ import '../../data/local/daos/nexus_dao.dart';
 import '../../data/remote/firestore_service.dart';
 import '../../data/sync/sync_engine.dart';
 import '../../data/sync/sync_state.dart';
+import '../services/notification_service.dart';
 
 final appDatabaseProvider = FutureProvider<AppDatabase>((ref) async {
   return AppDatabase.getInstance();
@@ -94,6 +95,13 @@ class SyncController extends Notifier<SyncState> {
         lastSyncedAt: DateTime.now(),
         lastError: result.error,
       );
+      if (result.failedCount > 0) {
+        await NotificationService.instance.showLocalNotification(
+          title: 'Sync Failed (${result.failedCount} items)',
+          body: result.error ?? 'Tap to open Sync Center and retry.',
+          payload: 'sync',
+        );
+      }
       return result;
     } catch (e) {
       state = state.copyWith(isSyncing: false, lastError: e.toString());
