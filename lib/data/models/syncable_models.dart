@@ -293,3 +293,133 @@ class BusinessTransaction {
     items: items,
   );
 }
+
+class StockMovement {
+  const StockMovement({
+    required this.id,
+    required this.branchId,
+    required this.productId,
+    required this.changeQty,
+    required this.reason,
+    this.referenceId,
+    this.note = '',
+    required this.createdBy,
+    required this.createdAt,
+    required this.updatedAt,
+    this.isDeleted = false,
+    this.deletedAt,
+    this.syncStatus = 'pending',
+  });
+
+  final String id;
+  final String branchId;
+  final String productId;
+  final int changeQty;
+  final String reason; // sale | purchase | adjustment | transfer_in | transfer_out
+  final String? referenceId;
+  final String note;
+  final String createdBy;
+  final int createdAt;
+  final int updatedAt;
+  final bool isDeleted;
+  final int? deletedAt;
+  final String syncStatus;
+
+  Map<String, dynamic> toSqlite() => {
+    'id': id,
+    'branch_id': branchId,
+    'product_id': productId,
+    'change_qty': changeQty,
+    'reason': reason,
+    'reference_id': referenceId,
+    'note': note,
+    'created_by': createdBy,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+    'is_deleted': isDeleted ? 1 : 0,
+    'deleted_at': deletedAt,
+    'sync_status': syncStatus,
+    'sync_error': null,
+  };
+
+  factory StockMovement.fromSqlite(Map<String, dynamic> m) => StockMovement(
+    id: m['id'] as String,
+    branchId: m['branch_id'] as String,
+    productId: m['product_id'] as String,
+    changeQty: (m['change_qty'] as num).toInt(),
+    reason: m['reason'] as String,
+    referenceId: m['reference_id'] as String?,
+    note: (m['note'] as String?) ?? '',
+    createdBy: m['created_by'] as String,
+    createdAt: (m['created_at'] as num).toInt(),
+    updatedAt: (m['updated_at'] as num).toInt(),
+    isDeleted: (m['is_deleted'] as int? ?? 0) == 1,
+    deletedAt: (m['deleted_at'] as num?)?.toInt(),
+    syncStatus: (m['sync_status'] as String?) ?? 'synced',
+  );
+}
+
+class StockTransfer {
+  const StockTransfer({
+    required this.id,
+    required this.fromBranchId,
+    required this.toBranchId,
+    required this.productId,
+    required this.quantity,
+    this.status = 'completed',
+    this.note = '',
+    required this.createdBy,
+    required this.createdAt,
+    required this.updatedAt,
+    this.isDeleted = false,
+    this.deletedAt,
+    this.syncStatus = 'pending',
+  });
+
+  final String id;
+  final String fromBranchId;
+  final String toBranchId;
+  final String productId;
+  final int quantity;
+  final String status;
+  final String note;
+  final String createdBy;
+  final int createdAt;
+  final int updatedAt;
+  final bool isDeleted;
+  final int? deletedAt;
+  final String syncStatus;
+
+  Map<String, dynamic> toSqlite() => {
+    'id': id,
+    'from_branch_id': fromBranchId,
+    'to_branch_id': toBranchId,
+    'product_id': productId,
+    'quantity': quantity,
+    'status': status,
+    'note': note,
+    'created_by': createdBy,
+    'created_at': createdAt,
+    'updated_at': updatedAt,
+    'is_deleted': isDeleted ? 1 : 0,
+    'deleted_at': deletedAt,
+    'sync_status': syncStatus,
+    'sync_error': null,
+  };
+
+  factory StockTransfer.fromSqlite(Map<String, dynamic> m) => StockTransfer(
+    id: m['id'] as String,
+    fromBranchId: m['from_branch_id'] as String,
+    toBranchId: m['to_branch_id'] as String,
+    productId: m['product_id'] as String,
+    quantity: (m['quantity'] as num).toInt(),
+    status: (m['status'] as String?) ?? 'completed',
+    note: (m['note'] as String?) ?? '',
+    createdBy: m['created_by'] as String,
+    createdAt: (m['created_at'] as num).toInt(),
+    updatedAt: (m['updated_at'] as num).toInt(),
+    isDeleted: (m['is_deleted'] as int? ?? 0) == 1,
+    deletedAt: (m['deleted_at'] as num?)?.toInt(),
+    syncStatus: (m['sync_status'] as String?) ?? 'synced',
+  );
+}

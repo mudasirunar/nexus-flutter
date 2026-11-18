@@ -270,4 +270,233 @@ class NexusDao {
       whereArgs: [id],
     );
   }
+
+  /// Returns a map of `productId -> quantity` for a specific branch.
+  Future<Map<String, int>> getBranchStockMap(String branchId) async {
+    final rows = await _db.query(
+      'branch_stock',
+      columns: ['product_id', 'quantity'],
+      where: 'branch_id = ? AND is_deleted = 0',
+      whereArgs: [branchId],
+    );
+    return {
+      for (final r in rows)
+        r['product_id'] as String: (r['quantity'] as num).toInt(),
+    };
+  }
+
+  /// Adjusts stock for a branch/product and records a [StockMovement] atomically.
+  Future<void> adjustBranchStock({
+    required String movementId,
+    required String branchId,
+    required String productId,
+    required int delta,
+    required String reason,
+    required String createdBy,
+    String? referenceId,
+    String note = '',
+    required int timestampMs,
+  }) async {
+    await _db.transaction((txn) async {
+      final stockRows = await txn.query(
+        'branch_stock',
+        columns: ['quantity'],
+        where: 'branch_id = ? AND product_id = ? AND is_deleted = 0',
+        whereArgs: [branchId, productId],
+        limit: 1,
+      );
+      final current = stockRows.isEmpty
+          ? 0
+          : (stockRows.first['quantity'] as num).toInt();
+      final nextQty = (current + delta).clamp(0, 1 << 30);
+
+      await txn.insert(
+        'branch_stock',
+        {
+          'id': '${branchId}_$productId',
+          'branch_id': branchId,
+          'product_id': productId,
+          'quantity': nextQty,
+          'updated_at': timestampMs,
+          'is_deleted': 0,
+          'deleted_at': null,
+          'sync_status': 'pending',
+          'sync_error': null,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      await txn.insert(
+        'stock_movements',
+        {
+          'id': movementId,
+          'branch_id': branchId,
+          'product_id': productId,
+          'change_qty': delta,
+          'reason': reason,
+          'reference_id': referenceId,
+          'note': note,
+          'created_by': createdBy,
+          'created_at': timestampMs,
+          'updated_at': timestampMs,
+          'is_deleted': 0,
+          'deleted_at': null,
+          'sync_status': 'pending',
+          'sync_error': null,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
+  Future<List<StockMovement>> getStockMovements({
+    String? branchId,
+    String? productId,
+  }) async {
+    final whereParts = <String>['is_deleted = 0'];
+    final args = <Object?>[];
+    if (branchId != null) {
+      whereParts.add('branch_id = ?');
+      args.add(branchId);
+    }
+    if (productId != null) {
+      whereParts.add('product_id = ?');
+      args.add(productId);
+    }
+    final rows = await _db.query(
+      'stock_movements',
+      where: whereParts.join(' AND '),
+      whereArgs: args,
+      orderBy: 'created_at DESC',
+    );
+    return rows.map(StockMovement.fromSqlite).toList();
+  }
+
+  /// Executes an inter-branch stock transfer atomically in SQLite.
+  Future<void> executeStockTransfer({
+    required StockTransfer transfer,
+    required String outMovementId,
+    required String inMovementId,
+  }) async {
+    await _db.transaction((txn) async {
+      Future<int> readQty(String bId) async {
+        final r = await txn.query(
+          'branch_stock',
+          columns: ['quantity'],
+          where: 'branch_id = ? AND product_id = ? AND is_deleted = 0',
+          whereArgs: [bId, transfer.productId],
+          limit: 1,
+        );
+        return r.isEmpty ? 0 : (r.first['quantity'] as num).toInt();
+      }
+
+      final fromQty = await readQty(transfer.fromBranchId);
+      if (fromQty < transfer.quantity) {
+        throw StateError('Insufficient stock in source branch ($fromQty available).');
+      }
+      final toQty = await readQty(transfer.toBranchId);
+
+      Future<void> writeStock(String bId, int qty) async {
+        await txn.insert(
+          'branch_stock',
+          {
+            'id': '${bId}_${transfer.productId}',
+            'branch_id': bId,
+            'product_id': transfer.productId,
+            'quantity': qty,
+            'updated_at': transfer.updatedAt,
+            'is_deleted': 0,
+            'deleted_at': null,
+            'sync_status': 'pending',
+            'sync_error': null,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      await writeStock(transfer.fromBranchId, fromQty - transfer.quantity);
+      await writeStock(transfer.toBranchId, toQty + transfer.quantity);
+
+      await txn.insert(
+        'stock_transfers',
+        transfer.toSqlite(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      await txn.insert('stock_movements', {
+        'id': outMovementId,
+        'branch_id': transfer.fromBranchId,
+        'product_id': transfer.productId,
+        'change_qty': -transfer.quantity,
+        'reason': 'transfer_out',
+        'reference_id': transfer.id,
+        'note': transfer.note,
+        'created_by': transfer.createdBy,
+        'created_at': transfer.createdAt,
+        'updated_at': transfer.updatedAt,
+        'is_deleted': 0,
+        'deleted_at': null,
+        'sync_status': 'pending',
+        'sync_error': null,
+      });
+
+      await txn.insert('stock_movements', {
+        'id': inMovementId,
+        'branch_id': transfer.toBranchId,
+        'product_id': transfer.productId,
+        'change_qty': transfer.quantity,
+        'reason': 'transfer_in',
+        'reference_id': transfer.id,
+        'note': transfer.note,
+        'created_by': transfer.createdBy,
+        'created_at': transfer.createdAt,
+        'updated_at': transfer.updatedAt,
+        'is_deleted': 0,
+        'deleted_at': null,
+        'sync_status': 'pending',
+        'sync_error': null,
+      });
+    });
+  }
+
+  Future<List<StockTransfer>> getStockTransfers() async {
+    final rows = await _db.query(
+      'stock_transfers',
+      where: 'is_deleted = 0',
+      orderBy: 'created_at DESC',
+    );
+    return rows.map(StockTransfer.fromSqlite).toList();
+  }
+
+  /// Computes total stock units and total sales per branch from local SQLite.
+  Future<Map<String, ({int stockUnits, double salesTotal})>>
+      getBranchSummaries() async {
+    final stockRows = await _db.rawQuery('''
+      SELECT branch_id, COALESCE(SUM(quantity), 0) AS total_units
+      FROM branch_stock
+      WHERE is_deleted = 0
+      GROUP BY branch_id
+    ''');
+    final salesRows = await _db.rawQuery('''
+      SELECT branch_id, COALESCE(SUM(total_amount), 0) AS total_sales
+      FROM transactions
+      WHERE is_deleted = 0 AND type = 'sale'
+      GROUP BY branch_id
+    ''');
+
+    final stockMap = {
+      for (final r in stockRows)
+        r['branch_id'] as String: (r['total_units'] as num).toInt(),
+    };
+    final salesMap = {
+      for (final r in salesRows)
+        r['branch_id'] as String: (r['total_sales'] as num).toDouble(),
+    };
+
+    final keys = {...stockMap.keys, ...salesMap.keys};
+    return {
+      for (final k in keys)
+        k: (stockUnits: stockMap[k] ?? 0, salesTotal: salesMap[k] ?? 0.0),
+    };
+  }
 }
