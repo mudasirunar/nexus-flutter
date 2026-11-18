@@ -1,0 +1,427 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid} (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required, immutable, == uid)
+    //   - email: string (required, valid email format, <= 254 chars)
+    //   - name: string (required, 1..120 chars)
+    //   - role: string (required, in ['admin', 'manager', 'employee'])
+    //   - assignedBranchId: string | null (optional, <= 100 chars)
+    //   - updatedAt: int (required, > 0, epoch ms)
+    //
+    // Collection: branches
+    // Document ID: {branchId} (UUID)
+    // Fields:
+    //   - id: string (required, immutable, == branchId)
+    //   - name: string (required, 1..120 chars)
+    //   - location: string (required, 1..200 chars)
+    //   - phone: string (required, 0..40 chars)
+    //   - isActive: bool (required)
+    //   - updatedAt: int (required, > 0, epoch ms)
+    //   - isDeleted: bool (required)
+    //   - deletedAt: int | null (optional, >= 0)
+    //
+    // Collection: products
+    // Document ID: {productId} (UUID)
+    // Fields:
+    //   - id: string (required, immutable, == productId)
+    //   - name: string (required, 1..150 chars)
+    //   - sku: string (required, 1..80 chars)
+    //   - barcode: string (required, 0..80 chars)
+    //   - category: string (required, 1..80 chars)
+    //   - costPrice: number (required, >= 0)
+    //   - sellingPrice: number (required, >= 0)
+    //   - lowStockThreshold: int (required, >= 0)
+    //   - imageUrl: string | null (optional, <= 500 chars)
+    //   - updatedAt: int (required, > 0, epoch ms)
+    //   - isDeleted: bool (required)
+    //   - deletedAt: int | null (optional, >= 0)
+    //
+    // Collection: branch_stock
+    // Document ID: {stockId} (UUID)
+    // Fields:
+    //   - id: string (required, immutable, == stockId)
+    //   - branchId: string (required, 1..100 chars)
+    //   - productId: string (required, 1..100 chars)
+    //   - quantity: int (required)
+    //   - updatedAt: int (required, > 0, epoch ms)
+    //   - isDeleted: bool (required)
+    //   - deletedAt: int | null (optional, >= 0)
+    //
+    // Collection: transactions
+    // Document ID: {txId} (UUID)
+    // Fields:
+    //   - id: string (required, immutable, == txId)
+    //   - branchId: string (required, 1..100 chars)
+    //   - type: string (required, in ['sale', 'purchase'])
+    //   - totalAmount: number (required, >= 0)
+    //   - profitAmount: number (required)
+    //   - notes: string (required, 0..1000 chars)
+    //   - createdBy: string (required, immutable, 1..128 chars)
+    //   - createdAt: int (required, immutable, > 0, epoch ms)
+    //   - items: list (required, size <= 200)
+    //   - updatedAt: int (required, > 0, epoch ms)
+    //   - isDeleted: bool (required)
+    //   - deletedAt: int | null (optional, >= 0)
+    //
+    // Collection: stock_movements
+    // Document ID: {movId} (UUID)
+    // Fields:
+    //   - id: string (required, immutable, == movId)
+    //   - branchId: string (required, 1..100 chars)
+    //   - productId: string (required, 1..100 chars)
+    //   - changeQty: int (required)
+    //   - reason: string (required, 1..60 chars)
+    //   - referenceId: string | null (optional, <= 100 chars)
+    //   - note: string (required, 0..500 chars)
+    //   - createdBy: string (required, immutable, 1..128 chars)
+    //   - createdAt: int (required, immutable, > 0, epoch ms)
+    //   - updatedAt: int (required, > 0, epoch ms)
+    //   - isDeleted: bool (required)
+    //   - deletedAt: int | null (optional, >= 0)
+    //
+    // Collection: stock_transfers
+    // Document ID: {transferId} (UUID)
+    // Fields:
+    //   - id: string (required, immutable, == transferId)
+    //   - fromBranchId: string (required, 1..100 chars)
+    //   - toBranchId: string (required, 1..100 chars, != fromBranchId)
+    //   - productId: string (required, 1..100 chars)
+    //   - quantity: int (required, > 0)
+    //   - status: string (required, in ['pending', 'in_transit', 'completed', 'cancelled'])
+    //   - note: string (required, 0..500 chars)
+    //   - createdBy: string (required, immutable, 1..128 chars)
+    //   - createdAt: int (required, immutable, > 0, epoch ms)
+    //   - updatedAt: int (required, > 0, epoch ms)
+    //   - isDeleted: bool (required)
+    //   - deletedAt: int | null (optional, >= 0)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function userExists() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return userExists() && getUserRole() == 'admin';
+    }
+
+    function isManagerOrAdmin() {
+      return userExists() && getUserRole() in ['admin', 'manager'];
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalStringOrNull(data, field, maxLen) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() <= 254 &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Common sync metadata validation for all offline-first synced collections
+    function hasValidSyncMetadata(data, docId) {
+      return data.id is string &&
+        data.id == docId &&
+        data.updatedAt is int &&
+        data.updatedAt > 0 &&
+        data.isDeleted is bool &&
+        (!( 'deletedAt' in data ) ||
+          data.deletedAt == null ||
+          (data.deletedAt is int && data.deletedAt >= 0));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUserProfile(data, uid) {
+      return hasRequiredFields(['uid', 'email', 'name', 'role', 'updatedAt']) &&
+        hasOnlyAllowedFields(['uid', 'email', 'name', 'role', 'assignedBranchId', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid == uid &&
+        isValidEmail(data.email) &&
+        isValidString(data.name, 1, 120) &&
+        data.role in ['admin', 'manager', 'employee'] &&
+        isValidOptionalStringOrNull(data, 'assignedBranchId', 100) &&
+        data.updatedAt is int &&
+        data.updatedAt > 0;
+    }
+
+    function isValidBranch(data, branchId) {
+      return hasRequiredFields([
+          'id', 'name', 'location', 'phone', 'isActive', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'name', 'location', 'phone', 'isActive', 'updatedAt', 'isDeleted', 'deletedAt'
+        ]) &&
+        hasValidSyncMetadata(data, branchId) &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.location, 1, 200) &&
+        isValidString(data.phone, 0, 40) &&
+        data.isActive is bool;
+    }
+
+    function isValidProduct(data, productId) {
+      return hasRequiredFields([
+          'id', 'name', 'sku', 'barcode', 'category', 'costPrice',
+          'sellingPrice', 'lowStockThreshold', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'name', 'sku', 'barcode', 'category', 'costPrice',
+          'sellingPrice', 'lowStockThreshold', 'imageUrl', 'updatedAt', 'isDeleted', 'deletedAt'
+        ]) &&
+        hasValidSyncMetadata(data, productId) &&
+        isValidString(data.name, 1, 150) &&
+        isValidString(data.sku, 1, 80) &&
+        isValidString(data.barcode, 0, 80) &&
+        isValidString(data.category, 1, 80) &&
+        data.costPrice is number && data.costPrice >= 0 &&
+        data.sellingPrice is number && data.sellingPrice >= 0 &&
+        data.lowStockThreshold is int && data.lowStockThreshold >= 0 &&
+        isValidOptionalStringOrNull(data, 'imageUrl', 500);
+    }
+
+    function isValidBranchStock(data, stockId) {
+      return hasRequiredFields([
+          'id', 'branchId', 'productId', 'quantity', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'branchId', 'productId', 'quantity', 'updatedAt', 'isDeleted', 'deletedAt'
+        ]) &&
+        hasValidSyncMetadata(data, stockId) &&
+        isValidString(data.branchId, 1, 100) &&
+        isValidString(data.productId, 1, 100) &&
+        data.quantity is int;
+    }
+
+    function isValidTransaction(data, txId) {
+      return hasRequiredFields([
+          'id', 'branchId', 'type', 'totalAmount', 'profitAmount',
+          'notes', 'createdBy', 'createdAt', 'items', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'branchId', 'type', 'totalAmount', 'profitAmount',
+          'notes', 'createdBy', 'createdAt', 'items', 'updatedAt', 'isDeleted', 'deletedAt'
+        ]) &&
+        hasValidSyncMetadata(data, txId) &&
+        isValidString(data.branchId, 1, 100) &&
+        data.type in ['sale', 'purchase'] &&
+        data.totalAmount is number && data.totalAmount >= 0 &&
+        data.profitAmount is number &&
+        isValidString(data.notes, 0, 1000) &&
+        isValidString(data.createdBy, 1, 128) &&
+        data.createdAt is int && data.createdAt > 0 &&
+        data.items is list && data.items.size() <= 200;
+    }
+
+    function isValidStockMovement(data, movId) {
+      return hasRequiredFields([
+          'id', 'branchId', 'productId', 'changeQty', 'reason',
+          'note', 'createdBy', 'createdAt', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'branchId', 'productId', 'changeQty', 'reason',
+          'referenceId', 'note', 'createdBy', 'createdAt', 'updatedAt', 'isDeleted', 'deletedAt'
+        ]) &&
+        hasValidSyncMetadata(data, movId) &&
+        isValidString(data.branchId, 1, 100) &&
+        isValidString(data.productId, 1, 100) &&
+        data.changeQty is int &&
+        isValidString(data.reason, 1, 60) &&
+        isValidOptionalStringOrNull(data, 'referenceId', 100) &&
+        isValidString(data.note, 0, 500) &&
+        isValidString(data.createdBy, 1, 128) &&
+        data.createdAt is int && data.createdAt > 0;
+    }
+
+    function isValidStockTransfer(data, transferId) {
+      return hasRequiredFields([
+          'id', 'fromBranchId', 'toBranchId', 'productId', 'quantity',
+          'status', 'note', 'createdBy', 'createdAt', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'fromBranchId', 'toBranchId', 'productId', 'quantity',
+          'status', 'note', 'createdBy', 'createdAt', 'updatedAt', 'isDeleted', 'deletedAt'
+        ]) &&
+        hasValidSyncMetadata(data, transferId) &&
+        isValidString(data.fromBranchId, 1, 100) &&
+        isValidString(data.toBranchId, 1, 100) &&
+        data.fromBranchId != data.toBranchId &&
+        isValidString(data.productId, 1, 100) &&
+        data.quantity is int && data.quantity > 0 &&
+        data.status in ['pending', 'in_transit', 'completed', 'cancelled'] &&
+        isValidString(data.note, 0, 500) &&
+        isValidString(data.createdBy, 1, 128) &&
+        data.createdAt is int && data.createdAt > 0;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // 1. Users: self-read or admin read/list; self-create on registration;
+    //    self-update limited to non-role fields (name, assignedBranchId, updatedAt);
+    //    only admin can update another user's role.
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && isValidUserProfile(request.resource.data, uid);
+      allow update: if isValidUserProfile(request.resource.data, uid) &&
+        areImmutableFieldsUnchanged(['uid', 'email']) &&
+        (
+          isAdmin() ||
+          (
+            isOwner(uid) &&
+            areImmutableFieldsUnchanged(['role']) &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['name', 'assignedBranchId', 'updatedAt'])
+          )
+        );
+      allow delete: if false;
+    }
+
+    // 2. Branches: any authenticated user can read; only admin can create, update, or soft-delete.
+    match /branches/{branchId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidBranch(request.resource.data, branchId);
+      allow update: if isAdmin() &&
+        isValidBranch(request.resource.data, branchId) &&
+        areImmutableFieldsUnchanged(['id']);
+      allow delete: if false;
+    }
+
+    // 3. Products: any authenticated user can read; admin & manager can create/update;
+    //    only admin can soft-delete (isDeleted == true).
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create: if isValidProduct(request.resource.data, productId) &&
+        (
+          isAdmin() ||
+          (isManagerOrAdmin() && request.resource.data.isDeleted == false)
+        );
+      allow update: if isValidProduct(request.resource.data, productId) &&
+        areImmutableFieldsUnchanged(['id']) &&
+        (
+          isAdmin() ||
+          (
+            isManagerOrAdmin() &&
+            resource.data.isDeleted == false &&
+            request.resource.data.isDeleted == false
+          )
+        );
+      allow delete: if false;
+    }
+
+    // 4a. Branch Stock: any authenticated user can read, create, and update;
+    //     only admin or manager can soft-delete (isDeleted == true).
+    match /branch_stock/{stockId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        isValidBranchStock(request.resource.data, stockId) &&
+        (request.resource.data.isDeleted == false || isManagerOrAdmin());
+      allow update: if isSignedIn() &&
+        isValidBranchStock(request.resource.data, stockId) &&
+        areImmutableFieldsUnchanged(['id']) &&
+        (
+          (resource.data.isDeleted == false && request.resource.data.isDeleted == false) ||
+          isManagerOrAdmin()
+        );
+      allow delete: if false;
+    }
+
+    // 4b. Transactions: any authenticated user can read, create, and update;
+    //     only admin or manager can soft-delete (isDeleted == true).
+    match /transactions/{txId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        isValidTransaction(request.resource.data, txId) &&
+        (request.resource.data.isDeleted == false || isManagerOrAdmin());
+      allow update: if isSignedIn() &&
+        isValidTransaction(request.resource.data, txId) &&
+        areImmutableFieldsUnchanged(['id', 'createdBy', 'createdAt']) &&
+        (
+          (resource.data.isDeleted == false && request.resource.data.isDeleted == false) ||
+          isManagerOrAdmin()
+        );
+      allow delete: if false;
+    }
+
+    // 4c. Stock Movements: any authenticated user can read, create, and update;
+    //     only admin or manager can soft-delete (isDeleted == true).
+    match /stock_movements/{movId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        isValidStockMovement(request.resource.data, movId) &&
+        (request.resource.data.isDeleted == false || isManagerOrAdmin());
+      allow update: if isSignedIn() &&
+        isValidStockMovement(request.resource.data, movId) &&
+        areImmutableFieldsUnchanged(['id', 'createdBy', 'createdAt']) &&
+        (
+          (resource.data.isDeleted == false && request.resource.data.isDeleted == false) ||
+          isManagerOrAdmin()
+        );
+      allow delete: if false;
+    }
+
+    // 5. Stock Transfers: any authenticated user can read;
+    //    only admin or manager can create, update, or soft-delete.
+    match /stock_transfers/{transferId} {
+      allow read: if isSignedIn();
+      allow create: if isManagerOrAdmin() &&
+        isValidStockTransfer(request.resource.data, transferId);
+      allow update: if isManagerOrAdmin() &&
+        isValidStockTransfer(request.resource.data, transferId) &&
+        areImmutableFieldsUnchanged(['id', 'createdBy', 'createdAt']);
+      allow delete: if false;
+    }
+
+    // Default deny for any other collection or path
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

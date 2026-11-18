@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/config/firebase_emulator_config.dart';
+import 'core/network/connectivity_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
+import 'features/auth/presentation/auth_controller.dart';
+import 'features/auth/presentation/lock_screen.dart';
+import 'features/auth/presentation/login_screen.dart';
 import 'shared/widgets/app_state_widgets.dart';
 
 Future<void> main() async {
@@ -19,32 +23,64 @@ Future<void> main() async {
   runApp(const ProviderScope(child: NexusApp()));
 }
 
-class NexusApp extends StatelessWidget {
+class NexusApp extends ConsumerWidget {
   const NexusApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'NEXUS',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.system,
-      home: const _PhaseOneBootstrapScreen(),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authControllerProvider);
+
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) =>
+          ref.read(authControllerProvider.notifier).recordUserActivity(),
+      child: MaterialApp(
+        title: 'NEXUS',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ThemeMode.system,
+        home: switch (authState.status) {
+          AuthStatus.loading => const Scaffold(
+            body: AppLoadingView(message: 'Restoring session...'),
+          ),
+          AuthStatus.unauthenticated => const LoginScreen(),
+          AuthStatus.locked => const LockScreen(),
+          AuthStatus.authenticated => const _AuthenticatedPlaceholder(),
+        },
+      ),
     );
   }
 }
 
-class _PhaseOneBootstrapScreen extends StatelessWidget {
-  const _PhaseOneBootstrapScreen();
+class _AuthenticatedPlaceholder extends ConsumerWidget {
+  const _AuthenticatedPlaceholder();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authControllerProvider);
+    final isOnline = ref.watch(isOnlineProvider).value ?? true;
+    final syncState = ref.watch(syncControllerProvider);
+    final user = auth.user;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('NEXUS')),
+      appBar: AppBar(
+        title: const Text('NEXUS'),
+        actions: [
+          IconButton(
+            tooltip: 'Sign Out',
+            icon: const Icon(Icons.logout),
+            onPressed: () =>
+                ref.read(authControllerProvider.notifier).signOut(),
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          const OfflineBanner(isOffline: false),
+          OfflineBanner(
+            isOffline: !isOnline,
+            pendingCount: syncState.pendingCount,
+          ),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
@@ -56,18 +92,13 @@ class _PhaseOneBootstrapScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'NEXUS Business Management',
+                        'Signed in as ${user?.name ?? ''}',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        kUseFirebaseEmulator
-                            ? 'Connected to Local Firebase Emulator Suite (${resolveEmulatorHost()})'
-                            : 'Connected to Live Firebase',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text('Role: ${user?.role.value.toUpperCase() ?? ''}'),
                       const SizedBox(height: AppSpacing.md),
                       const SyncStatusBadge(status: SyncRecordStatus.synced),
                     ],
